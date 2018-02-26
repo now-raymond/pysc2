@@ -145,6 +145,7 @@ class FeatureUnit(enum.IntEnum):
   assigned_harvesters = 21
   ideal_harvesters = 22
   weapon_cooldown = 23
+  tag = 24 # RGP
 
 
 class Feature(collections.namedtuple(
@@ -671,7 +672,10 @@ class Features(object):
           u.assigned_harvesters,
           u.ideal_harvesters,
           u.weapon_cooldown,
-      ), dtype=np.int32)
+
+          # RGP
+          u.tag,
+      ), dtype=np.int64) # RGP: Changed from int32 to int64 to accomodate tag.
 
     raw = obs.raw_data
 
@@ -738,10 +742,14 @@ class Features(object):
     except KeyError:
       raise ValueError("Invalid function id: %s." % func_id)
 
-    # Available?
-    if not (skip_available or func_id in self.available_actions(obs)):
-      raise ValueError("Function %s/%s is currently not available" % (
-          func_id, func.name))
+    # RGP: Only check availability of UI actions. Allow raw_actions through.
+    # See raw_func in actions.py.
+    # Is there a better way to do this?
+    if func_id < actions.FUNCTIONS.move_unit.id:
+        # Available?
+        if not (skip_available or func_id in self.available_actions(obs)):
+          raise ValueError("Function %s/%s is currently not available" % (
+              func_id, func.name))
 
     # Right number of args?
     if len(func_call.arguments) != len(func.args):
@@ -771,6 +779,13 @@ class Features(object):
     # Convert them to python types.
     kwargs = {type_.name: type_.fn(a)
               for type_, a in zip(func.args, func_call.arguments)}
+
+    # RGP - Convert screen space to world space for raw functions that accept world coordinates
+    if func.id == actions.FUNCTIONS.move_unit.id:
+        # Update the camera location so we can calculate screen to world pos
+        self._update_camera(point.Point.build(obs.raw_data.player.camera))
+        world_pos = self._world_to_feature_screen_px.back_pt(kwargs["screen"])
+        kwargs["screen"] = world_pos
 
     # Call the right callback to get an SC2 action proto.
     sc2_action = sc_pb.Action()

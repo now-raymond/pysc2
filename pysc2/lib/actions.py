@@ -46,6 +46,13 @@ def spatial(action, action_space):
 def no_op(action, action_space):
   del action, action_space
 
+# RGP
+def move_unit(action, action_space, tag_id, queued, screen):
+  unit_command = action.action_raw.unit_command
+  unit_command.ability_id = 1 # todo - is there an enum for this?
+  unit_command.unit_tags.append(tag_id)
+  unit_command.queue_command = queued
+  screen.assign_to(unit_command.target_world_space_pos)
 
 def move_camera(action, action_space, minimap):
   """Move the camera."""
@@ -199,7 +206,7 @@ class ArgumentType(collections.namedtuple(
 class Arguments(collections.namedtuple("Arguments", [
     "screen", "minimap", "screen2", "queued", "control_group_act",
     "control_group_id", "select_point_act", "select_add", "select_unit_act",
-    "select_unit_id", "select_worker", "build_queue_id", "unload_id"])):
+    "select_unit_id", "select_worker", "build_queue_id", "unload_id", "tag_id"])):  # RGP - Added tag_id.
   """The full list of argument types.
 
   Take a look at TYPES and FUNCTION_TYPES for more details.
@@ -304,6 +311,7 @@ TYPES = Arguments.types(
     select_worker=ArgumentType.enum(SELECT_WORKER_OPTIONS, SelectWorker),
     build_queue_id=ArgumentType.scalar(10),  # Depends on current build queue.
     unload_id=ArgumentType.scalar(500),  # Depends on the current loaded units.
+    tag_id=ArgumentType.scalar(2e64 - 1),  # RGP
 )
 
 # Which argument types do each function need?
@@ -324,6 +332,7 @@ FUNCTION_TYPES = {
     cmd_screen: [TYPES.queued, TYPES.screen],
     cmd_minimap: [TYPES.queued, TYPES.minimap],
     autocast: [],
+    move_unit: [TYPES.tag_id, TYPES.queued, TYPES.screen],    # RGP
 }
 
 # Which ones need an ability?
@@ -355,6 +364,17 @@ class Function(collections.namedtuple(
         valid.
   """
   __slots__ = ()
+
+  # RGP
+  # avail_fn set to False to make sure it never shows up as an available action.
+  # We have additional code in transform_action to allow raw actions through. (this could probably be improved)
+  # This is because it is extremely unlikely that RNG can 'guess' the tag of a unit.
+  # If avail_fn is True then the random scripted agent makes no-ops double of the time.
+  @classmethod
+  def raw_func(cls, id_, name, function_type, avail_fn=False):
+      """Define a function representing a raw action."""
+      return cls(id_, name, 0, 0, function_type, FUNCTION_TYPES[function_type],
+                 avail_fn)
 
   @classmethod
   def ui_func(cls, id_, name, function_type, avail_fn=always):
@@ -988,6 +1008,7 @@ _FUNCTIONS = [
     Function.ability(521, "UnloadAllAt_Overlord_minimap", cmd_minimap, 1408, 3669),
     Function.ability(522, "UnloadAllAt_WarpPrism_screen", cmd_screen, 913, 3669),
     Function.ability(523, "UnloadAllAt_WarpPrism_minimap", cmd_minimap, 913, 3669),
+    Function.raw_func(541, "move_unit", move_unit), # RGP
 ]
 # pylint: enable=line-too-long
 
